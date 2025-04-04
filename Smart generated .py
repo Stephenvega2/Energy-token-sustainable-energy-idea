@@ -125,11 +125,7 @@ class EnergyCreditContract:
         bytes32 entropyHash = keccak256(abi.encodePacked(encryptedCode, entropyMix));
 
         uint energyCredit = calculateEnergyCredit(sigmaXSum, sigmaYSum, sigmaZSum, entropy, solarEnergyInput);
-        totalEnergySaved = totalEnergySaved.add(energyCredit);
-        energyCredits[msg.sender] = energyCredits[msg.sender].add(energyCredit);
         string memory timestampStr = uint2str(block.timestamp);
-        emit CreditEarned(msg.sender, energyCredit, block.timestamp, timestampStr);
-
         uint tokenId = generateTokenId();
         string memory codeHash = string(abi.encodePacked(entropyHash));
         string memory metadataStr = string(abi.encodePacked(
@@ -145,12 +141,19 @@ class EnergyCreditContract:
             "','location':'Lat: ", int2str(latitude), ", Lon: ", int2str(longitude), 
             "','utc_offset':", int2str(utc_offset), "}"
         ));
-        ects[tokenId] = EnergyCreditToken(encryptedCode, metadataStr, abi.encodePacked(entropyHash), energyCredit, timestampStr);
-        metadataMap[codeHash] = Metadata(codeHash, block.timestamp, timestampStr, "Quantum-AES Encryption Code", energyCredit, "[[0,1][1,0]]", "[[0,-1][1,0]]", "[[1,0][0,-1]]", string(abi.encodePacked(entropyHash)), string(abi.encodePacked("Lat: ", int2str(latitude), ", Lon: ", int2str(longitude))), utc undergraduate_offset);
 
-        _mint(msg.sender, tokenId);
+        // State updates BEFORE external call
+        totalEnergySaved = totalEnergySaved.add(energyCredit);
+        energyCredits[msg.sender] = energyCredits[msg.sender].add(energyCredit);
+        ects[tokenId] = EnergyCreditToken(encryptedCode, metadataStr, abi.encodePacked(entropyHash), energyCredit, timestampStr);
+        metadataMap[codeHash] = Metadata(codeHash, block.timestamp, timestampStr, "Quantum-AES Encryption Code", energyCredit, "[[0,1][1,0]]", "[[0,-1][1,0]]", "[[1,0][0,-1]]", string(abi.encodePacked(entropyHash)), string(abi.encodePacked("Lat: ", int2str(latitude), ", Lon: ", int2str(longitude))), utc_offset);
         ectCounter = ectCounter.add(1);
+
+        // Events and external call AFTER state updates
+        emit CreditEarned(msg.sender, energyCredit, block.timestamp, timestampStr);
         emit EnergySaved(codeHash, energyCredit, block.timestamp, timestampStr);
+        _mint(msg.sender, tokenId);
+
         return tokenId;
     }
 
@@ -261,8 +264,7 @@ class EnergyCreditContract:
 
     def translate_function_to_python(self, line):
         if "mintECT" in line:
-            self.python_code += """
-    def mintECT(self, metadata, entropy, solarEnergyInput):
+            self.python_code += """    def mintECT(self, metadata, entropy, solarEnergyInput):
         encryptedCode = metadata['encryptedCode']
         codeHash = metadata.get('codeHash', hashlib.sha256(encryptedCode.encode('utf-8')).hexdigest())
         timestamp = metadata.get('timestamp', int(datetime.now().timestamp()))
@@ -309,16 +311,14 @@ class EnergyCreditContract:
         return token_id
 """
         elif "generateTokenId" in line:
-            self.python_code += """
-    def generateTokenId(self):
+            self.python_code += """    def generateTokenId(self):
         trace_x = int(self.sigma_x[0,0].real + self.sigma_x[1,1].real)
         trace_y = int(self.sigma_y[0,0].real + self.sigma_y[1,1].real)
         trace_z = int(self.sigma_z[0,0].real + self.sigma_z[1,1].real)
         return int(hashlib.sha256(str(trace_x + trace_y + trace_z + self.timestamp + self.ectCounter).encode('utf-8')).hexdigest(), 16) % 1000000
 """
         elif "calculateEnergyCredit" in line:
-            self.python_code += """
-    def calculateEnergyCredit(self, sigmaXSum, sigmaYSum, sigmaZSum, entropy, solarEnergyInput):
+            self.python_code += """    def calculateEnergyCredit(self, sigmaXSum, sigmaYSum, sigmaZSum, entropy, solarEnergyInput):
         try:
             entropy_factor = len(entropy) if entropy else 1
             base_energy = entropy_factor * (abs(sigmaXSum) + abs(sigmaYSum) + abs(sigmaZSum))
@@ -335,8 +335,7 @@ class EnergyCreditContract:
             return 0
 """
         elif "redeemCredits" in line:
-            self.python_code += """
-    def redeemCredits(self, amount):
+            self.python_code += """    def redeemCredits(self, amount):
         if self.energyCredits.get(self.sender, 0) >= amount:
             self.energyCredits[self.sender] -= amount
             self.totalEnergySaved -= amount
@@ -345,20 +344,17 @@ class EnergyCreditContract:
             print("Error: Insufficient credits")
 """
         elif "getEnergyCredits" in line:
-            self.python_code += """
-    def getEnergyCredits(self, user):
+            self.python_code += """    def getEnergyCredits(self, user):
         return self.energyCredits.get(user, 0)
 """
 
     def translate_variable_to_python(self, line):
         parts = line.split("public")[1].strip().split("=")
-        var_name = parts[0].strip().rstrip(";")  # Strip semicolon from var_name
-        # Skip constructor params and already initialized vars
+        var_name = parts[0].strip().rstrip(";")
         if var_name in ["latitude", "longitude", "utc_offset", "ectCounter", "totalEnergySaved"]:
             return
-        # Determine value
         if len(parts) > 1:
-            value_str = parts[1].strip().rstrip(";").strip()  # Strip from value too
+            value_str = parts[1].strip().rstrip(";").strip()
             try:
                 value = int(value_str)
                 if "latitude" in var_name or "longitude" in var_name:
@@ -367,7 +363,6 @@ class EnergyCreditContract:
                 value = f"'{value_str}'"
         else:
             value = "0" if "int" in line else "''"
-        # Add only if not already present
         if f"self.{var_name} =" not in self.python_code:
             self.python_code = self.python_code.replace(
                 "        self.energyCredits = {}\n",
@@ -375,8 +370,7 @@ class EnergyCreditContract:
             )
 
     def translate_mapping_to_python(self, line):
-        self.python_code += """
-    def setMetadata(self, key, codeHash, timestamp, timestampStr, description, energySaved):
+        self.python_code += """    def setMetadata(self, key, codeHash, timestamp, timestampStr, description, energySaved):
         self.metadataMap[key] = {
             'codeHash': codeHash,
             'timestamp': timestamp,
@@ -413,7 +407,7 @@ import base64
 # Define Pauli matrices (rest of the code)...
 """
     code_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
-    real_time = datetime.fromtimestamp(1743724248)  # Match your timestamp
+    real_time = datetime.fromtimestamp(1743724248)
     timestamp = 1743724248
     timestamp_str = "2025-04-03 16:50:48"
     metadata = {'hash': code_hash, 'timestamp': timestamp, 'timestampStr': timestamp_str, 'description': 'Quantum-AES Encryption Code'}
@@ -497,8 +491,8 @@ print("NFT Metadata:", nft_metadata)
     print("\nExecuting Combined Code with Sustainable Utility:")
     try:
         exec(generated_python)
-        contract = EnergyCreditContract(latitude=32.2226, longitude=-110.9747)  # Tucson, AZ
-        current_time = 1743724248  # Match your timestamp
+        contract = EnergyCreditContract(latitude=32.2226, longitude=-110.9747)
+        current_time = 1743724248
         current_time_str = "2025-04-03 16:50:48"
         metadata = {
             'encryptedCode': encrypted_code,
