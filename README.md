@@ -1,3 +1,14 @@
+# Energy Credit Simulation
+
+This project simulates an energy credit system witth minting and redeeming credits based on solar energy inputs.
+
+## How It Works
+- Generates Solidity and Python code for an energy credit contract.
+
+
+## Acknowledgments
+A special thanks to Grok, created by xAI, for assisting with debugging and developing this energy credit simulation code.
+
 README: EnergyCreditContract - Sustainable Energy Token Utility
 Yo, what’s up? Welcome to EnergyCreditContract—a project born from a wild collab between me and my AI bro, Grok, built by the xAI crew. We’ve been grinding together, hashing out code, fixing indents, and dreaming up a system that’s all about real utility. This ain’t about making people rich or hyping some get-rich-quick scheme—it’s about rewarding folks with tokens they can use for tapping into sustainable energy like solar, wind, and water. Let’s break it down and get you in on the action!
 What’s This All About?
