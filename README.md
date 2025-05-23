@@ -1,5 +1,7 @@
 # Energy Credit Simulation
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/b24333d3dc244d6b9cf274f2991fcf0e)](https://app.codacy.com/gh/Stephenvega2/Energy-token-sustainable-energy-idea?utm_source=github.com&utm_medium=referral&utm_content=Stephenvega2/Energy-token-sustainable-energy-idea&utm_campaign=Badge_Grade)
+
 This project simulates an energy credit system witth minting and redeeming credits based on solar energy inputs.
 
 ## How It Works
