@@ -66,7 +66,7 @@ class EnergyCommSystem:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS blocks (
-                    index INTEGER PRIMARY KEY,
+                    [index] INTEGER PRIMARY KEY,
                     token_id INTEGER,
                     prev_hash TEXT,
                     metadata TEXT,
@@ -96,7 +96,7 @@ class EnergyCommSystem:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO blocks (index, token_id, prev_hash, metadata, entropy_hash, timestamp, hash)
+                INSERT INTO blocks ([index], token_id, prev_hash, metadata, entropy_hash, timestamp, hash)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 block.index,
@@ -112,7 +112,7 @@ class EnergyCommSystem:
     def _get_last_block(self):
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM blocks ORDER BY index DESC LIMIT 1")
+            cursor.execute("SELECT * FROM blocks ORDER BY [index] DESC LIMIT 1")
             row = cursor.fetchone()
             if row:
                 return Block(
