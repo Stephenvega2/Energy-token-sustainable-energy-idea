@@ -36,13 +36,11 @@ class Block:
 
 class EnergyCommSystem:
     def __init__(self, latitude=32.2226, longitude=-110.9747, utc_offset=-7, db_path="ect_blocks.db"):
-        # Device-specific entropy
         self.device_id = str(uuid.getnode())
         self.device_entropy = hashlib.sha256(
             (platform.platform() + self.device_id).encode()
         ).digest()
 
-        # SQLite database for block storage
         self.db_path = db_path
         self._init_database()
         self.ectCounter = 0
@@ -50,24 +48,20 @@ class EnergyCommSystem:
         self.totalEnergySaved = 0
         self.energyCredits = {}
 
-        # Location and time
         self.latitude = latitude
         self.longitude = longitude
         self.utc_offset = utc_offset
         self.timestamp = int(datetime.now(timezone.utc).timestamp())
         self.timestampStr = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=self.utc_offset))).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Quantum-inspired
         self.sigma_x = np.array([[0, 1], [1, 0]])
         self.sigma_y = np.array([[0, -1j], [1j, 0]])
         self.sigma_z = np.array([[1, 0], [0, -1]])
         self.entropy_pool = os.urandom(32) + self.device_entropy
 
-        # Genesis block
         self.genesis_block()
 
     def _init_database(self):
-        """Initialize SQLite database and create blocks table."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -87,7 +81,6 @@ class EnergyCommSystem:
             conn.commit()
 
     def genesis_block(self):
-        """Create and store the genesis block in SQLite."""
         genesis_metadata = {
             "timestamp": int(datetime.now(timezone.utc).timestamp()),
             "description": "Genesis Block",
@@ -100,7 +93,6 @@ class EnergyCommSystem:
         self._store_block(block)
 
     def _store_block(self, block):
-        """Store a block in SQLite."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -118,7 +110,6 @@ class EnergyCommSystem:
             conn.commit()
 
     def _get_last_block(self):
-        """Retrieve the last block from SQLite."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM blocks ORDER BY index DESC LIMIT 1")
@@ -213,7 +204,7 @@ class EnergyCommSystem:
         trace_z = int(self.sigma_z[0,0].real + self.sigma_z[1,1].real)
         return int(hashlib.sha256(str(trace_x + trace_y + trace_z + self.timestamp + self.ectCounter).encode('utf-8')).hexdigest(), 16) % 1000000
 
-    def _create_block(self, token_id, encrypted_code, final_voltage, final_snr, gas_cost, energy_credit, optimal_params, nonce, tag):
+    def _create_block(self, token_id, encrypted_code, block_data):
         code_hash = hashlib.sha256(encrypted_code.encode('utf-8')).hexdigest()
         entropy_hash = hashlib.sha256(self.entropy_pool).hexdigest()[:32]
         metadata = {
@@ -221,25 +212,25 @@ class EnergyCommSystem:
             'timestamp': self.timestamp,
             'timestampStr': self.timestampStr,
             'description': 'Grounding Energy and Secure Communication',
-            'energySaved': energy_credit,
-            'gasCost': gas_cost,
-            'groundingVoltage': final_voltage,
-            'finalVoltage': final_voltage,
-            'finalSNR': final_snr,
+            'energySaved': block_data['energy_credit'],
+            'gasCost': block_data['gas_cost'],
+            'groundingVoltage': block_data['final_voltage'],
+            'finalVoltage': block_data['final_voltage'],
+            'finalSNR': block_data['final_snr'],
             'sigma_x': str(self.sigma_x),
             'sigma_y': str(self.sigma_y),
             'sigma_z': str(self.sigma_z),
             'entropyHash': entropy_hash,
             'location': f'Lat: {self.latitude}, Lon: {self.longitude}',
             'utc_offset': self.utc_offset,
-            'optimalParams': optimal_params.tolist(),
-            'nonce': base64.b64encode(nonce).decode('utf-8'),
-            'tag': base64.b64encode(tag).decode('utf-8'),
+            'optimalParams': block_data['optimal_params'].tolist(),
+            'nonce': base64.b64encode(block_data['nonce']).decode('utf-8'),
+            'tag': base64.b64encode(block_data['tag']).decode('utf-8'),
             'device_id': self.device_id,
             'device_info': platform.platform(),
         }
         prev_block = self._get_last_block() or Block(0, 0, "0"*64, {}, "0"*32)
-        return Block(len(self.chain_count()), token_id, prev_block.hash, metadata, entropy_hash)
+        return Block(self.chain_count(), token_id, prev_block.hash, metadata, entropy_hash)
 
     def _update_energy_credits(self, energy_credit):
         self.totalEnergySaved += energy_credit
@@ -247,7 +238,6 @@ class EnergyCommSystem:
         self.ectCounter += 1
 
     def chain_count(self):
-        """Return the number of blocks in the database."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM blocks")
@@ -269,7 +259,16 @@ class EnergyCommSystem:
         energy_credit = self._calculate_energy_credit(final_voltage, final_snr, solar_energy_input)
         token_id = self._generate_token_id()
 
-        block = self._create_block(token_id, encrypted_code, final_voltage, final_snr, gas_discount_factor, energy_credit, optimal_params, nonce, tag)
+        block_data = {
+            'final_voltage': final_voltage,
+            'final_snr': final_snr,
+            'gas_cost': gas_discount_factor,
+            'energy_credit': energy_credit,
+            'optimal_params': optimal_params,
+            'nonce': nonce,
+            'tag': tag
+        }
+        block = self._create_block(token_id, encrypted_code, block_data)
         self._store_block(block)
         self._update_energy_credits(energy_credit)
 
@@ -289,7 +288,6 @@ class EnergyCommSystem:
         return self.energyCredits.get(user, 0)
 
     def find_block_by_entropy(self, entropy_hash):
-        """Find a block by entropy hash in SQLite."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM blocks WHERE entropy_hash = ?", (entropy_hash,))
@@ -305,7 +303,6 @@ class EnergyCommSystem:
             return None
 
     def find_block_by_code_hash(self, code_hash):
-        """Find a block by code hash in SQLite."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM blocks WHERE json_extract(metadata, '$.codeHash') = ?", (code_hash,))
@@ -321,7 +318,6 @@ class EnergyCommSystem:
             return None
 
     def find_block_by_token_id(self, token_id):
-        """Find a block by token ID in SQLite."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM blocks WHERE token_id = ?", (token_id,))
