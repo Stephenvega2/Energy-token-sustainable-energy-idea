@@ -6,10 +6,10 @@ import base64
 from datetime import datetime, timezone, timedelta
 from pysolar.solar import get_altitude
 import os
-import json
 import platform
 import uuid
-
+import sqlite3
+import json
 from kivy.app import App
 from kivy.uix.tabbedpanel import TabbedPanel, TabbedPanelItem
 from kivy.uix.boxlayout import BoxLayout
@@ -35,15 +35,16 @@ class Block:
         return hashlib.sha256(block_string.encode()).hexdigest()
 
 class EnergyCommSystem:
-    def __init__(self, latitude=32.2226, longitude=-110.9747, utc_offset=-7):
+    def __init__(self, latitude=32.2226, longitude=-110.9747, utc_offset=-7, db_path="ect_blocks.db"):
         # Device-specific entropy
         self.device_id = str(uuid.getnode())
         self.device_entropy = hashlib.sha256(
             (platform.platform() + self.device_id).encode()
         ).digest()
 
-        # Blockchain-like storage
-        self.chain = []
+        # SQLite database for block storage
+        self.db_path = db_path
+        self._init_database()
         self.ectCounter = 0
         self.sender = "0xMockAddress"
         self.totalEnergySaved = 0
@@ -65,7 +66,28 @@ class EnergyCommSystem:
         # Genesis block
         self.genesis_block()
 
+    def _init_database(self):
+        """Initialize SQLite database and create blocks table."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS blocks (
+                    index INTEGER PRIMARY KEY,
+                    token_id INTEGER,
+                    prev_hash TEXT,
+                    metadata TEXT,
+                    entropy_hash TEXT,
+                    timestamp INTEGER,
+                    hash TEXT,
+                    UNIQUE(hash)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entropy_hash ON blocks(entropy_hash)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_id ON blocks(token_id)")
+            conn.commit()
+
     def genesis_block(self):
+        """Create and store the genesis block in SQLite."""
         genesis_metadata = {
             "timestamp": int(datetime.now(timezone.utc).timestamp()),
             "description": "Genesis Block",
@@ -73,8 +95,43 @@ class EnergyCommSystem:
             "device_info": platform.platform(),
             "entropyHash": hashlib.sha256(self.device_entropy).hexdigest()[:32],
         }
-        block = Block(0, 0, "0"*64, genesis_metadata, genesis_metadata['entropyHash'])
-        self.chain.append(block)
+        entropy_hash = genesis_metadata['entropyHash']
+        block = Block(0, 0, "0"*64, genesis_metadata, entropy_hash)
+        self._store_block(block)
+
+    def _store_block(self, block):
+        """Store a block in SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO blocks (index, token_id, prev_hash, metadata, entropy_hash, timestamp, hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                block.index,
+                block.token_id,
+                block.prev_hash,
+                json.dumps(block.metadata),
+                block.entropy_hash,
+                block.timestamp,
+                block.hash
+            ))
+            conn.commit()
+
+    def _get_last_block(self):
+        """Retrieve the last block from SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM blocks ORDER BY index DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return Block(
+                    index=row[0],
+                    token_id=row[1],
+                    prev_hash=row[2],
+                    metadata=json.loads(row[3]),
+                    entropy_hash=row[4]
+                )
+            return None
 
     def simulate_circuit_with_grounding(self, t, surge_voltage=10000):
         R, C = 50, 1e-6
@@ -132,7 +189,12 @@ class EnergyCommSystem:
                 break
         return params
 
-    def calculate_energy_credit(self, final_voltage, snr, solar_energy_input):
+    def _calculate_gas_discount(self, final_voltage):
+        base_gas_cost = 100
+        gas_discount_factor = max(0.1, 1 - (10000 - final_voltage) / 10000)
+        return base_gas_cost * gas_discount_factor
+
+    def _calculate_energy_credit(self, final_voltage, final_snr, solar_energy_input):
         sigma_x_sum = int(self.sigma_x.sum().real)
         sigma_y_sum = int(self.sigma_y.sum().real)
         sigma_z_sum = int(self.sigma_z.sum().real)
@@ -145,29 +207,13 @@ class EnergyCommSystem:
         solar_factor = max(0, solar_altitude) / 90
         return int(base_energy * 5 + grounding_energy + solar_energy_input * solar_factor)
 
-    def mint_ect(self, message, solar_energy_input=10):
-        t = np.linspace(0, 1, 100)
-        voltages = self.simulate_circuit_with_grounding(t)
-        final_voltage = voltages[-1]
-        snr_values = self.simulate_signal(t)
-        final_snr = snr_values[-1]
-
-        optimal_params = self.run_classical_optimization(final_voltage)
-        aes_key = self.generate_aes256_key_from_params(optimal_params)
-        nonce, ciphertext, tag = self.encrypt_aes256(aes_key, message)
-        encrypted_code = base64.b64encode(nonce + ciphertext).decode('utf-8')
-
-        # Quantum-inspired gas cost: Lower final_voltage is better (closer to ground = lower cost)
-        gas_discount_factor = max(0.1, 1 - (10000 - final_voltage) / 10000)
-        base_gas_cost = 100
-        minting_gas_cost = base_gas_cost * gas_discount_factor
-
-        energy_credit = self.calculate_energy_credit(final_voltage, final_snr, solar_energy_input)
+    def _generate_token_id(self):
         trace_x = int(self.sigma_x[0,0].real + self.sigma_x[1,1].real)
         trace_y = int(self.sigma_y[0,0].real + self.sigma_y[1,1].real)
         trace_z = int(self.sigma_z[0,0].real + self.sigma_z[1,1].real)
-        token_id = int(hashlib.sha256(str(trace_x + trace_y + trace_z + self.timestamp + self.ectCounter).encode('utf-8')).hexdigest(), 16) % 1000000
+        return int(hashlib.sha256(str(trace_x + trace_y + trace_z + self.timestamp + self.ectCounter).encode('utf-8')).hexdigest(), 16) % 1000000
 
+    def _create_block(self, token_id, encrypted_code, final_voltage, final_snr, gas_cost, energy_credit, optimal_params, nonce, tag):
         code_hash = hashlib.sha256(encrypted_code.encode('utf-8')).hexdigest()
         entropy_hash = hashlib.sha256(self.entropy_pool).hexdigest()[:32]
         metadata = {
@@ -176,7 +222,7 @@ class EnergyCommSystem:
             'timestampStr': self.timestampStr,
             'description': 'Grounding Energy and Secure Communication',
             'energySaved': energy_credit,
-            'gasCost': minting_gas_cost,
+            'gasCost': gas_cost,
             'groundingVoltage': final_voltage,
             'finalVoltage': final_voltage,
             'finalSNR': final_snr,
@@ -192,21 +238,42 @@ class EnergyCommSystem:
             'device_id': self.device_id,
             'device_info': platform.platform(),
         }
+        prev_block = self._get_last_block() or Block(0, 0, "0"*64, {}, "0"*32)
+        return Block(len(self.chain_count()), token_id, prev_block.hash, metadata, entropy_hash)
 
-        prev_block = self.chain[-1]
-        block = Block(
-            index=len(self.chain),
-            token_id=token_id,
-            prev_hash=prev_block.hash,
-            metadata=metadata,
-            entropy_hash=entropy_hash
-        )
-        self.chain.append(block)
-
+    def _update_energy_credits(self, energy_credit):
         self.totalEnergySaved += energy_credit
         self.energyCredits[self.sender] = self.energyCredits.get(self.sender, 0) + energy_credit
+        self.ectCounter += 1
 
-        print(f"Minted ECT ID {token_id}: Energy Saved = {energy_credit} Wh, Gas Cost = {minting_gas_cost:.2f}, SNR = {final_snr:.2f} dB")
+    def chain_count(self):
+        """Return the number of blocks in the database."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM blocks")
+            return cursor.fetchone()[0]
+
+    def mint_ect(self, message, solar_energy_input=10):
+        t = np.linspace(0, 1, 100)
+        voltages = self.simulate_circuit_with_grounding(t)
+        final_voltage = voltages[-1]
+        snr_values = self.simulate_signal(t)
+        final_snr = snr_values[-1]
+
+        optimal_params = self.run_classical_optimization(final_voltage)
+        aes_key = self.generate_aes256_key_from_params(optimal_params)
+        nonce, ciphertext, tag = self.encrypt_aes256(aes_key, message)
+        encrypted_code = base64.b64encode(nonce + ciphertext).decode('utf-8')
+
+        gas_discount_factor = self._calculate_gas_discount(final_voltage)
+        energy_credit = self._calculate_energy_credit(final_voltage, final_snr, solar_energy_input)
+        token_id = self._generate_token_id()
+
+        block = self._create_block(token_id, encrypted_code, final_voltage, final_snr, gas_discount_factor, energy_credit, optimal_params, nonce, tag)
+        self._store_block(block)
+        self._update_energy_credits(energy_credit)
+
+        print(f"Minted ECT ID {token_id}: Energy Saved = {energy_credit} Wh, Gas Cost = {block.metadata['gasCost']:.2f}, SNR = {final_snr:.2f} dB")
         print(f"Credit Earned: {self.sender} earned {energy_credit} Wh")
         return token_id, encrypted_code, aes_key, nonce, tag
 
@@ -221,26 +288,54 @@ class EnergyCommSystem:
     def get_energy_credits(self, user):
         return self.energyCredits.get(user, 0)
 
-    # Blockchain-like retrievals
     def find_block_by_entropy(self, entropy_hash):
-        for block in self.chain:
-            if block.entropy_hash == entropy_hash:
-                return block
-        return None
+        """Find a block by entropy hash in SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM blocks WHERE entropy_hash = ?", (entropy_hash,))
+            row = cursor.fetchone()
+            if row:
+                return Block(
+                    index=row[0],
+                    token_id=row[1],
+                    prev_hash=row[2],
+                    metadata=json.loads(row[3]),
+                    entropy_hash=row[4]
+                )
+            return None
 
     def find_block_by_code_hash(self, code_hash):
-        for block in self.chain:
-            if block.metadata.get('codeHash') == code_hash:
-                return block
-        return None
+        """Find a block by code hash in SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM blocks WHERE json_extract(metadata, '$.codeHash') = ?", (code_hash,))
+            row = cursor.fetchone()
+            if row:
+                return Block(
+                    index=row[0],
+                    token_id=row[1],
+                    prev_hash=row[2],
+                    metadata=json.loads(row[3]),
+                    entropy_hash=row[4]
+                )
+            return None
 
     def find_block_by_token_id(self, token_id):
-        for block in self.chain:
-            if block.token_id == token_id:
-                return block
-        return None
+        """Find a block by token ID in SQLite."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM blocks WHERE token_id = ?", (token_id,))
+            row = cursor.fetchone()
+            if row:
+                return Block(
+                    index=row[0],
+                    token_id=row[1],
+                    prev_hash=row[2],
+                    metadata=json.loads(row[3]),
+                    entropy_hash=row[4]
+                )
+            return None
 
-# --- Kivy UI (same as before) ---
 class EncryptionTab(BoxLayout):
     def __init__(self, system, **kwargs):
         super().__init__(orientation='vertical', padding=10, spacing=10, **kwargs)
