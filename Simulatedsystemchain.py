@@ -124,18 +124,17 @@ class NFTMintingContract:
         actual_gas_used = random.randint(gas_limit // 2, gas_limit) # Simulate variable gas usage
         final_gas_cost_eth = (gas_price_gwei * actual_gas_used) / (10**9)
 
-        print(f"Minted Token {token_id}. Actual Gas Cost: {final_gas_cost:.6f} ETH (used {actual_gas_used} gas)")
+        # FIX IS HERE: Changed 'final_gas_cost' to 'final_gas_cost_eth'
+        print(f"Minted Token {token_id}. Actual Gas Cost: {final_gas_cost_eth:.6f} ETH (used {actual_gas_used} gas)")
         return token_id, rarity, mint_timestamp, final_gas_cost_eth
 
 # --- 4. "Grounded" and "Entangled" Encryption Module (Conceptual) ---
 class GroundedEntangledEncryption:
-    # MODIFICATION START: Pass device parameters
     def __init__(self, device_parameters):
         self.device_parameters = device_parameters
         # This module conceptually represents a secure hardware enclave or a physically grounded system.
         # It's where sensitive keys would be stored and encryption operations performed.
         # The "grounded" aspect implies physical security, power stability, and perhaps thermal management.
-    # MODIFICATION END
 
     def _generate_entangled_key_parts(self, data_to_encrypt):
         # Conceptual "entanglement": key is derived from multiple factors
@@ -148,7 +147,7 @@ class GroundedEntangledEncryption:
         # In reality, this would involve quantum key distribution (QKD) principles,
         # multi-party computation (MPC), or homomorphic encryption.
         
-        # MODIFICATION START: Incorporate device_parameters
+        # Incorporate device_parameters
         seed_material = (
             f"{data_to_encrypt}-"
             f"{random.randint(0, 1000000)}-"
@@ -156,7 +155,6 @@ class GroundedEntangledEncryption:
             f"{self.device_parameters.get('uptime', time.time())}-"         # Use simulated uptime
             f"{time.time()}"
         )
-        # MODIFICATION END
         
         # Simulate generating "entangled" key parts - meaning derived from multiple sources
         key_part_A = hash(seed_material + "partA")
@@ -175,13 +173,12 @@ class GroundedEntangledEncryption:
         # Simulate encryption using the 'entangled' key
         encrypted_data = "".join(chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(sensitive_data))
         
-        # MODIFICATION START: Include more device details in encryption_details
+        # Include more device details in encryption_details
         encryption_details = {
             "method": "Conceptual_Entangled_XOR_with_Device_Grounding",
             "device_info": self.device_parameters, # Store the parameters from your device
             "key_derivation_factors_conceptual": ["randomness", "device_fingerprint", "data_nonce", "grounding_parameter_from_device"]
         }
-        # MODIFICATION END
         
         print(f"Encrypted data for {token_id} using entangled encryption, grounded by your device.")
         return encrypted_data, encryption_details
@@ -230,9 +227,7 @@ class MintingOptimizer:
                     print(f"SUCCESS! Minted a {rarity} token with ID {token_id} at a cost of {final_gas_cost:.6f} ETH.")
 
                     # Apply "Grounded" and "Entangled" Encryption
-                    # MODIFICATION START: Use the encryption module initialized with device parameters
                     encrypted_data, encryption_details = self.encryption_module.encrypt_token_data(token_id, rarity)
-                    # MODIFICATION END
                     
                     self.gas_oracle.record_minted_token(token_id, rarity, mint_timestamp, final_gas_cost, encrypted_data, str(encryption_details))
                     
@@ -290,9 +285,8 @@ if __name__ == "__main__":
     simulated_blockchain = SimulatedBlockchain()
     gas_oracle = GasOracle()
     nft_contract = NFTMintingContract(simulated_blockchain)
-    # MODIFICATION START: Pass device parameters to the encryption module
+    # Pass device parameters to the encryption module
     grounded_encryption = GroundedEntangledEncryption(my_device_parameters)
-    # MODIFICATION END
 
     optimizer = MintingOptimizer(gas_oracle, nft_contract, grounded_encryption, target_rarity="Elite")
 
