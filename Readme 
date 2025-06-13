@@ -1,0 +1,45 @@
+# Grounded.py - Energy Credit Token Simulation System
+
+## Overview
+
+**Grounded.py** implements a simulation and digital token system for sustainable energy ideas. It models energy dynamics, encrypts messages, and mints "Energy Credit Tokens" (ECTs) that can later be redeemed or tracked. The project combines concepts from electronics, cryptography, solar energy, and blockchain-inspired accounting.
+
+---
+
+## Features
+
+- **Energy Simulation:** Simulates voltage grounding and signal-to-noise degradation over time.
+- **Quantum-Inspired Optimization:** Uses Pauli matrices and a Hamiltonian for parameter optimization.
+- **Secure Communication:** Encrypts messages using AES-256 based on simulated parameters.
+- **Energy Credit Minting:** Issues ECTs based on energy savings, signal quality, and solar input.
+- **Blockchain-like Storage:** Stores tokens, credits, and metadata in internal Python structures.
+- **Solar Integration:** Uses real geolocation and solar altitude to influence energy credit calculation.
+- **Redeem and Track Credits:** Allows users to redeem credits and view their balances.
+
+---
+
+## How It Works
+
+1. **Simulation:**  
+   - Simulates circuit voltage decay (grounding) and signal degradation.
+   - Incorporates solar altitude for location-based energy input.
+
+2. **Optimization and Encryption:**  
+   - Runs a quantum-inspired optimization to get parameters.
+   - Derives an AES-256 key from these parameters.
+   - Encrypts a message (e.g., "Hello, Bob!") using this key.
+
+3. **Token Minting:**  
+   - Calculates an energy credit value using simulation results and solar data.
+   - Creates a unique token with the encrypted message and detailed metadata.
+   - Stores token and updates user’s energy credit balance.
+
+4. **Redemption & Tracking:**  
+   - Credits can be redeemed or checked with provided methods.
+
+---
+
+## Running the Script
+
+```bash
+python Grounded.py
